@@ -1,0 +1,16 @@
+Python 3.13+
+PowerShell 7+
+Docker Desktop with WSL2 backend
+WSL2 Ubuntu 22.04 LTS
+AMD ROCm drivers for WSL2
+Visual Studio Build Tools (C++)
+Pinned Python modules:
+ - crewai==0.4.12
+ - qdrant-client[fastembed]==1.2.0
+ - flowise==0.3.4
+ - requests==2.31.0
+ - numpy==1.26.4
+ - pydantic==2.6.2
+ - httpx==0.24.1
+ - httpcore==0.17.3
+Ollama local LLM client v1.6.4+

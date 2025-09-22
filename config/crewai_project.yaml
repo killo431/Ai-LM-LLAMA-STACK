@@ -1,0 +1,6 @@
+# CrewAI project configuration for agents, roles, memory, and endpoints
+qdrant:
+  url: http://localhost:6333
+ollama:
+  api_url: http://localhost:11434
+agents: []

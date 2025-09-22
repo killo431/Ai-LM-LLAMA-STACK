@@ -1,0 +1,55 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Minimal tools for HTTPS git
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# Copy the entire project first to ensure all files are available
+COPY . /app/
+
+# Debug: Show what files we have
+RUN echo "=== Files in /app ===" && ls -la /app/ && \
+    echo "=== Contents of requirements.txt ===" && \
+    if [ -f /app/requirements.txt ]; then cat /app/requirements.txt; else echo "requirements.txt not found!"; fi
+
+# Install dependencies 
+RUN python -m pip install --upgrade pip && \
+    if [ -f /app/requirements.txt ]; then \
+        echo "Installing from requirements.txt"; \
+        pip install --no-cache-dir -r /app/requirements.txt; \
+    elif [ -f /app/pyproject.toml ]; then \
+        echo "Installing from pyproject.toml"; \
+        pip install --no-cache-dir -e .; \
+    else \
+        echo "No requirements.txt found, installing crewai==0.80.0 directly"; \
+        pip install --no-cache-dir crewai==0.80.0 crewai-tools==0.14.0; \
+    fi
+
+# Verify installation
+RUN python -c "import crewai; print(f'CrewAI version: {crewai.__version__}')" || \
+    (echo "CrewAI import failed, installing manually..." && \
+     pip install --no-cache-dir crewai==0.80.0 crewai-tools==0.14.0 && \
+     python -c "import crewai; print(f'CrewAI version: {crewai.__version__}')")
+
+# OPTIONAL: Pull upstream template (only if you want to merge with upstream)
+# RUN git clone --depth 1 https://github.com/vin67/crewai_docker.git /tmp/crewai_docker \
+#  && cp -a /tmp/crewai_docker/src/docker_crew_template/. /app/ \
+#  && rm -rf /tmp/crewai_docker
+
+# Debug: list files so you can see the structure
+RUN echo "Listing /app contents for debug:" && ls -la /app && ls -la /app/src/
+
+# Add src to Python path so imports work
+ENV PYTHONPATH=/app/src:$PYTHONPATH
+
+EXPOSE 8000
+
+# Run main.py from the correct location
+CMD ["python", "src/docker_crew_template/main.py"]

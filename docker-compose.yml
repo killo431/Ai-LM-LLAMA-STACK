@@ -1,0 +1,311 @@
+networks:
+  ai-network:
+    driver: bridge
+
+volumes:
+  flowise_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/flowise_data
+  crewai_studio_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/crewai_studio_data
+  lightrag_rag_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/lightrag_rag_storage
+  lightrag_inputs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/lightrag_inputs
+  lightrag_tiktoken:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/lightrag_tiktoken
+  anythingllm_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/anythingllm_data
+  openwebui_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/openwebui_data
+  n8n_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/n8n_storage
+  ollama_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/ollama_storage
+  qdrant_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/qdrant_storage
+  postgres_storage: {}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres2
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    # ports:
+    #   - "${POSTGRES_EXTERNAL_PORT:-5433}:5432"
+    volumes:
+      - postgres_storage:/var/lib/postgresql2/data2
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=Texas123!
+      - POSTGRES_DB=ai_stack
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U 'admin' -d 'ai_stack' -h localhost -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_storage:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-*}
+      - OLLAMA_HOST=0.0.0.0:11434
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  crewai-studio:
+    image: tham0nk/crewai-studio:latest
+    container_name: crewai-studio
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "8501:8501"
+    volumes:
+      - crewai_studio_data:/app/data
+    # Load all env vars (including LMSTUDIO_API_BASE) from .env
+    env_file:
+      - .env
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_HOST=http://ollama:11434
+      - QDRANT_URL=http://qdrant:6333
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=Texas123!
+      - POSTGRES_DB=ai_stack
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - LMSTUDIO_API_BASE=${LMSTUDIO_API_BASE:-}
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+    # Allow container to resolve the host's LM Studio (Linux-friendly)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  flowise:
+    image: flowiseai/flowise:latest
+    container_name: flowise
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "3000:3000"
+    volumes:
+      - flowise_data:/root/.flowise
+    environment:
+      - FLOWISE_USERNAME=${FLOWISE_USERNAME:-admin}
+      - FLOWISE_PASSWORD=${FLOWISE_PASSWORD:-admin}
+      - QDRANT_HOST=qdrant:6333
+      - OLLAMA_HOST=ollama:11434
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  lightrag:
+    image: ghcr.io/hkuds/lightrag:latest
+    container_name: lightrag
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "${LIGHTRAG_PORT:-9621}:9621"
+    volumes:
+      - lightrag_rag_storage:/app/data/rag_storage
+      - lightrag_inputs:/app/data/inputs
+      - lightrag_tiktoken:/app/data/tiktoken
+    environment:
+      - TIKTOKEN_CACHE_DIR=/app/data/tiktoken
+      - QDRANT_HOST=qdrant:6333
+      - OLLAMA_HOST=ollama:11434
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9621/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  anythingllm:
+    image: mintplexlabs/anythingllm:latest
+    container_name: anythingllm
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "3001:3001"
+    volumes:
+      - anythingllm_data:/app/server/storage
+    environment:
+      - STORAGE_DIR=/app/server/storage
+      - LLM_PROVIDER=ollama
+      - OLLAMA_BASE_PATH=http://ollama:11434
+      - EMBEDDING_ENGINE=ollama
+      - EMBEDDING_MODEL=nomic-embed-text
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:${OPENWEBUI_DOCKER_TAG:-main}
+    container_name: openwebui
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "${OPEN_WEBUI_PORT:-8080}:8080"
+    volumes:
+      - openwebui_data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_AUTH=${OPENWEBUI_AUTH:-false}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_storage:/home/node/.n8n
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - N8N_SECURE_COOKIE=false
+      - DB_POSTGRESDB_PORT=5432
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
+      - DB_POSTGRESDB_USER=admin
+      - DB_POSTGRESDB_PASSWORD=Texas123!
+      - DB_POSTGRESDB_DATABASE=ai_stack
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

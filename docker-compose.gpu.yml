@@ -1,0 +1,16 @@
+# Optional override to enable AMD ROCm GPU for Ollama.
+# Use with: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+services:
+  ollama:
+    image: ollama/ollama:rocm
+    devices:
+      - "/dev/kfd:/dev/kfd"
+      - "/dev/dri:/dev/dri"
+    group_add:
+      - "${VIDEO_GID}"
+      - "${RENDER_GID}"
+      - "${KFD_GID}"
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
+      - ROCM_VERSION=${ROCM_VERSION:-6.0}
+      - HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES:-0}

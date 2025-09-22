@@ -1,0 +1,382 @@
+volumes:
+  flowise_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/flowise_data
+
+  crewai_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/crewai_data
+
+  lightrag_rag_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/lightrag_rag_storage
+
+  lightrag_inputs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/lightrag_inputs
+
+  lightrag_tiktoken:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/lightrag_tiktoken
+
+  anythingllm_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/anythingllm_data
+
+  openwebui_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/openwebui_data
+
+  n8n_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/n8n_storage
+
+  n8n_import_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/n8n_import_storage
+
+  postgres_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/postgres_storage
+
+  ollama_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/ollama_storage
+
+  ollama_gpu_amd_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/ollama_gpu_amd_storage
+
+  qdrant_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/qdrant_storage
+
+  qdrant_storage_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/qdrant_storage_data
+
+networks:
+  ai-network:
+    driver: bridge
+
+services:
+  flowise:
+    image: flowiseai/flowise:latest
+    container_name: flowise
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "3000:3000"
+    volumes:
+      - flowise_data:/root/.flowise
+    environment:
+      - FLOWISE_USERNAME=${FLOWISE_USERNAME:-admin}
+      - FLOWISE_PASSWORD=${FLOWISE_PASSWORD:-admin}
+      - QDRANT_HOST=qdrant:6333
+      - OLLAMA_HOST=ollama:11434
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  crewai:
+    image: ghcr.io/joaomdmoura/crewai:latest
+    container_name: crewai
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "7860:7860"
+    volumes:
+      - crewai_data:/app/data
+    environment:
+      - QDRANT_HOST=qdrant:6333
+      - OLLAMA_HOST=ollama:11434
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${CREWAI_POSTGRES_DB}
+      - MEMORY_LIMIT=${MEMORY_LIMIT}
+      - USABLE_CPU_CORES_COUNT=${USABLE_CPU_CORES_COUNT}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  lightrag:
+    container_name: lightrag
+    image: ghcr.io/hkuds/lightrag:latest
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "${LIGHTRAG_PORT:-9621}:9621"
+    volumes:
+      - lightrag_rag_storage:/app/data/rag_storage
+      - lightrag_inputs:/app/data/inputs
+      - lightrag_tiktoken:/app/data/tiktoken
+      - ./config.ini:/app/config.ini
+      - ./.env:/app/.env
+    env_file:
+      - .env
+    environment:
+      - TIKTOKEN_CACHE_DIR=/app/data/tiktoken
+      - QDRANT_HOST=qdrant:6333
+      - OLLAMA_HOST=ollama:11434
+      - MEMORY_LIMIT=${MEMORY_LIMIT}
+      - USABLE_CPU_CORES_COUNT=${USABLE_CPU_CORES_COUNT}
+      - INSTANCES=${INSTANCES}
+      - SHARED_PATH_HOST=${SHARED_PATH_HOST}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9621/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  anythingllm:
+    image: anythingllm/anythingllm:latest
+    container_name: anythingllm
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "3001:3001"
+    volumes:
+      - anythingllm_data:/app/server/storage
+    environment:
+      - QDRANT_HOST=qdrant:6333
+      - OLLAMA_HOST=ollama:11434
+      - MEMORY_LIMIT=${MEMORY_LIMIT}
+      - USABLE_CPU_CORES_COUNT=${USABLE_CPU_CORES_COUNT}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:${OPENWEBUI_DOCKER_TAG:-main}
+    container_name: openwebui
+    restart: ${RESTART_OPTION:-unless-stopped}
+    networks:
+      - ai-network
+    ports:
+      - "${OPEN_WEBUI_PORT:-8080}:8080"
+    volumes:
+      - openwebui_data:/app/backend/data
+    environment:
+      - OLLAMA_API_URL=http://ollama:11434
+      - QDRANT_API_URL=http://qdrant:6333
+      - POSTGRES_DB=${OPENWEBUI_POSTGRES_DB}
+      - POSTGRES_USER=${OPENWEBUI_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${OPENWEBUI_POSTGRES_PASSWORD}
+      - OPENWEBUI_AUTH=${OPENWEBUI_AUTH}
+      - MEMORY_LIMIT=${MEMORY_LIMIT}
+      - USABLE_CPU_CORES_COUNT=${USABLE_CPU_CORES_COUNT}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  qdrant:
+    image: qdrant/qdrant
+    container_name: qdrant
+    networks:
+      - ai-network
+    restart: ${RESTART_OPTION:-unless-stopped}
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+      - qdrant_storage_data:/qdrant/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    networks:
+      - ai-network
+    restart: ${RESTART_OPTION:-unless-stopped}
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_storage:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  ollama:
+    image: ollama/ollama:rocm
+    container_name: ollama
+    networks:
+      - ai-network
+    restart: ${RESTART_OPTION:-unless-stopped}
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_gpu_amd_storage:/root/.ollama
+    devices:
+      - "/dev/kfd"
+      - "/dev/dri"
+    environment:
+      - INSTANCES=${INSTANCES}
+      - GPUS_COUNT=${GPUS_COUNT}
+      - MEMORY_LIMIT=${MEMORY_LIMIT}
+      - USABLE_CPU_CORES_COUNT=${USABLE_CPU_CORES_COUNT}
+      - SHARED_PATH_HOST=${SHARED_PATH_HOST}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    networks:
+      - ai-network
+    restart: ${RESTART_OPTION:-unless-stopped}
+    ports:
+      - "5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PERSONALIZATION_ENABLED=false
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
+      - N8N_DEFAULT_BINARY_DATA_MODE=${N8N_DEFAULT_BINARY_DATA_MODE}
+      - OLLAMA_HOST=ollama:11434
+      - QDRANT_HOST=qdrant:6333
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - MEMORY_LIMIT=${MEMORY_LIMIT}
+      - USABLE_CPU_CORES_COUNT=${USABLE_CPU_CORES_COUNT}
+    env_file:
+      - .env
+    volumes:
+      - n8n_storage:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  n8n-import:
+    image: n8nio/n8n:latest
+    container_name: n8n-import
+    networks:
+      - ai-network
+    entrypoint: /bin/sh
+    command:
+      - "-c"
+      - "n8n import:credentials --separate --input=/demo-data/credentials && n8n import:workflow --separate --input=/demo-data/workflows"
+    volumes:
+      - ./n8n/demo-data:/demo-data
+      - n8n_import_storage:/home/node/.n8n
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+# ===============================
+# Recommendations & Integration Notes
+# ===============================
+# Ollama & LLMs:
+# - Choose model variants based on use case (codestral for code, llava for multimodal, etc.)
+# - Use ollama:rocm for AMD GPU acceleration; always test GPU performance and stability before production.
+# - Regularly update models and consider version pinning for reproducibility.
+#
+# QdrantDB:
+# - Use persistent volumes for both /qdrant/storage and /qdrant/data for durability.
+# - Monitor disk usage; vector DBs can grow fast.
+#
+# n8n:
+# - Store credentials and workflows in persistent volumes.
+# - Use n8n’s environment variables for security (JWT secret, encryption key).
+# - Use a reverse proxy (nginx/Traefik) for secure HTTPS access if exposed externally.
+#
+# CrewAI, Flowise, AnythingLLM, LightRAG:
+# - Integrate with Qdrant and Ollama endpoints using internal Docker network DNS (service-name:port).
+# - Ensure access to shared data directories for file exchange workflows.
+# - Document your workflow integration points for future contributors.
+#
+# OpenWebUI:
+# - Map the UI port to something memorable (3000 or 8080).
+# - Secure with authentication (OPENWEBUI_AUTH=True).
