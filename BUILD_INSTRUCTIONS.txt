@@ -1,6 +1,0 @@
-1. Enable WSL2 on Windows 11 and install Ubuntu 22.04 LTS.
-2. Run PowerShell script `scripts/install_deps.ps1` as Administrator.
-3. Open Ubuntu terminal and run `scripts/setup_wsl.sh`.
-4. Start Docker Desktop and launch containers via `docker-compose up -d`.
-5. Run the orchestrator: `python run_crewai.py`.
-6. For automated builds, run `deployment_agent.py`.
